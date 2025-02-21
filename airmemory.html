@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hava Trafik Hafıza Oyunu</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .corridor {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            margin: 5px;
+            background-color: #ddd;
+            line-height: 30px;
+            border-radius: 5px;
+        }
+        .occupied {
+            background-color: #ff6666;
+            color: white;
+        }
+        #levelSelect, #instructions, #response {
+            display: none;
+            margin-top: 20px;
+        }
+        #levelSelect button {
+            margin: 5px;
+        }
+        .city-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .city {
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .city.selected {
+            background-color: #66cc66;
+            color: white;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hava Trafik Hafıza Oyunu</h1>
+    <div id="levelSelect">
+        <h2>Zorluk Seviyesi Seçin</h2>
+        <button onclick="startGame(1)">Seviye 1</button>
+        <button onclick="startGame(2)">Seviye 2</button>
+        <button onclick="startGame(3)">Seviye 3</button>
+        <button onclick="startGame(4)">Seviye 4</button>
+        <button onclick="startGame(5)">Seviye 5</button>
+        <button onclick="startGame(6)">Seviye 6</button>
+        <button onclick="startGame(7)">Seviye 7</button>
+        <button onclick="startGame(8)">Seviye 8</button>
+    </div>
+    <div id="setup">
+        <h2>Koridorlar</h2>
+        <div id="corridors"></div>
+    </div>
+    <div id="instructions">
+        <h2>Talimatlar Geliyor...</h2>
+    </div>
+    <div id="response">
+        <h2>Şehirleri Seç</h2>
+        <div id="timer">Kalan süre: hesaplanıyor...</div>
+        <div class="city-grid" id="cityGrid"></div>
+        <button onclick="checkAnswers()">Kontrol Et</button>
+        <button id="nextStep" style="display: none;" onclick="nextStep()">Yeni Adım</button>
+    </div>
+
+    <script>
+        const corridors = Array.from({ length: 10 }, (_, i) => i + 1);
+        let occupiedCorridors = [];
+        let instructions = [];
+        let correctCities = [];
+        let level = 1; // Seviye numarası
+        let correctSteps = 0; // Doğru adım sayacı
+        let countdown; // Süreyi globale taşıdık ki sıfırlayabilelim
+        let selectedLevel = 0; // Seçilen zorluk seviyesi
+        const cities = [
+            ["Amsterdam", "Ankara", "Ashgabat", "Bagdad", "Bahrain", "Baku", "Bangkok", "Basel", "Batumi", "Beirut", "Belgrade", "Berlin", "Bilbao"],
+            ["Bishkek", "Bologna", "Bombay", "Boston", "Bremen", "Budapest", "Dallas", "Delhi", "Doha", "Dubai", "Dublin", "Hamburg", "Havana"],
+            ["Houston", "Kathmandu", "Kiev", "Lagos", "Lisbon", "London", "Lyon", "Madrid", "Malaga", "Malta", "Manchester", "Melbourne", "Miami"],
+            ["Milan", "Montreal", "Moscow", "Munich", "Paris", "Phuket", "Porto", "Prague", "Riyadh", "Rotterdam", "Salzburg", "Santiago", "Shanghai"],
+            ["Singapore", "Stockholm", "Stuttgart", "Sydney", "Tashkent", "Tokyo", "Toronto", "Tunis", "Valencia", "Venice", "Vienna", "Zagreb", "Zurich"]
+        ];
+
+        // Zorluk seviyelerine göre talimat sayıları
+        const levelSettings = {
+            1: { required: 3, ignored: 2 },
+            2: { required: 4, ignored: 3 },
+            3: { required: 5, ignored: 4 },
+            4: { required: 5, ignored: 4 },
+            5: { required: 6, ignored: 5 },
+            6: { required: 7, ignored: 6 },
+            7: { required: 8, ignored: 7 },
+            8: { required: 9, ignored: 8 }
+        };
+
+        // Oyun başlatıldığında seviye seçimi yap
+        function startGame(selected) {
+            selectedLevel = selected;
+            document.getElementById("levelSelect").style.display = "none";
+            document.getElementById("setup").style.display = "block";
+            setupCorridors();
+        }
+
+        // Başlangıç ekranını hazırla ve otomatik talimatları başlat
+        function setupCorridors() {
+            const corridorDiv = document.getElementById("corridors");
+            corridorDiv.innerHTML = ""; // Eski koridorları sıfırla
+            occupiedCorridors = [Math.floor(Math.random() * 10) + 1, Math.floor(Math.random() * 10) + 1];
+            if (occupiedCorridors[0] === occupiedCorridors[1]) occupiedCorridors[1] = (occupiedCorridors[1] % 10) + 1;
+            corridors.forEach(c => {
+                const div = document.createElement("div");
+                div.className = "corridor" + (occupiedCorridors.includes(c) ? " occupied" : "");
+                div.textContent = c;
+                corridorDiv.appendChild(div);
+            });
+            setTimeout(startInstructions, 4000); // 4 saniye sonra talimatlar otomatik başlar
+        }
+
+        // Talimatları oluştur ve seslendir
+        function startInstructions() {
+            document.getElementById("setup").style.display = "none";
+            document.getElementById("instructions").style.display = "block";
+            const { required: requiredCitiesCount, ignored: ignoredCitiesCount } = levelSettings[selectedLevel];
+            const totalInstructions = requiredCitiesCount + ignoredCitiesCount;
+
+            // Benzersiz şehirler seç
+            instructions = [];
+            correctCities = [];
+            const allCities = cities.flat();
+            const usedCities = new Set();
+            while (usedCities.size < totalInstructions) {
+                const city = allCities[Math.floor(Math.random() * allCities.length)];
+                if (!usedCities.has(city)) usedCities.add(city);
+            }
+            const uniqueCities = Array.from(usedCities);
+
+            // Müsait ve dolu koridorları ayır
+            const availableCorridors = corridors.filter(c => !occupiedCorridors.includes(c));
+            const unavailableCorridors = occupiedCorridors.slice(); // Kopyasını al
+            const usedCorridors = new Set(); // Kullanılan koridorları takip et
+
+            // Doğru talimatlar (hatırlanacak şehirler)
+            for (let i = 0; i < requiredCitiesCount; i++) {
+                const city = uniqueCities[i];
+                const availableCorridorIndex = Math.floor(Math.random() * availableCorridors.length);
+                const corridor = availableCorridors[availableCorridorIndex];
+                instructions.push({ city, corridor });
+                correctCities.push(city);
+                usedCorridors.add(corridor); // Kullanılan koridoru kaydet
+                availableCorridors.splice(availableCorridorIndex, 1); // Kullanılan koridoru çıkar
+            }
+
+            // Yanlış talimatlar (hatırlanmayacak şehirler)
+            for (let i = requiredCitiesCount; i < totalInstructions; i++) {
+                const city = uniqueCities[i];
+                let corridor;
+                do {
+                    corridor = unavailableCorridors[Math.floor(Math.random() * unavailableCorridors.length)];
+                } while (usedCorridors.has(corridor)); // Kullanılmamış bir koridor bul
+                instructions.push({ city, corridor });
+                usedCorridors.add(corridor); // Kullanılan koridoru kaydet
+            }
+
+            // Talimatları karıştır ve seslendir
+            instructions.sort(() => Math.random() - 0.5); // Rastgele sırala
+            let delay = 0;
+            speechSynthesis.cancel(); // Önceki ses kuyruğunu temizle
+            instructions.reduce((promise, inst) => {
+                return promise.then(() => {
+                    return new Promise(resolve => {
+                        const utterance = new SpeechSynthesisUtterance(`  To ${inst.city} on Corridor ${inst.corridor}`); // Başa boşluk eklendi
+                        utterance.lang = "en-US";
+                        utterance.onend = () => setTimeout(resolve, 3000); // Ses bitince 3 saniye bekle
+                        speechSynthesis.speak(utterance);
+                    });
+                });
+            }, Promise.resolve()).then(() => {
+                setTimeout(showResponse, 3000); // Son talimattan 3 saniye sonra cevap ekranı
+            });
+        }
+
+        // Cevap ekranını göster
+        function showResponse() {
+            document.getElementById("instructions").style.display = "none";
+            document.getElementById("response").style.display = "block";
+            const cityGrid = document.getElementById("cityGrid");
+            cityGrid.innerHTML = ""; // Eski şehirleri sıfırla
+            cities.forEach(column => {
+                const colDiv = document.createElement("div");
+                column.forEach(city => {
+                    const div = document.createElement("div");
+                    div.className = "city";
+                    div.textContent = city;
+                    div.onclick = () => div.classList.toggle("selected");
+                    colDiv.appendChild(div);
+                });
+                cityGrid.appendChild(colDiv);
+            });
+            const timeLimit = correctCities.length * 4; // Her şehir için 4 saniye
+            let timeLeft = timeLimit;
+            const timer = document.getElementById("timer");
+            timer.textContent = `Kalan süre: ${timeLeft} saniye`;
+            countdown = setInterval(() => {
+                timeLeft--;
+                timer.textContent = `Kalan süre: ${timeLeft} saniye`;
+                if (timeLeft <= 0) {
+                    clearInterval(countdown);
+                    checkAnswers();
+                }
+            }, 1000);
+        }
+
+        // Cevapları kontrol et
+        function checkAnswers() {
+            const selected = Array.from(document.querySelectorAll(".city.selected")).map(div => div.textContent);
+            const correct = correctCities.every(city => selected.includes(city)) && selected.every(city => correctCities.includes(city));
+            if (correct) {
+                correctSteps++; // Doğru adım sayısını artır
+                level++; // Doğruysa seviye artar
+                if (correctSteps >= 30) {
+                    alert(`Tebrikler! 30 doğru adımla oyunu tamamladınız!`);
+                    return; // Oyun biter
+                }
+                alert(`Tebrikler! Seviye ${level} tamamlandı. Doğru adım: ${correctSteps}`);
+            } else {
+                alert(`Yanlış! Doğru şehirler: ${correctCities.join(", ")}`);
+            }
+            document.querySelector("#response button").style.display = "none"; // Kontrol Et butonunu gizle
+            document.getElementById("nextStep").style.display = "inline"; // Yeni Adım butonunu göster
+            clearInterval(countdown); // Süreyi durdur
+        }
+
+        // Yeni adıma geç
+        function nextStep() {
+            occupiedCorridors = [];
+            instructions = [];
+            correctCities = [];
+            document.getElementById("response").style.display = "none";
+            document.getElementById("setup").style.display = "block";
+            document.getElementById("nextStep").style.display = "none"; // Yeni Adım butonunu gizle
+            document.querySelector("#response button").style.display = "inline"; // Kontrol Et butonunu geri getir
+            document.getElementById("timer").textContent = "Kalan süre: hesaplanıyor..."; // Süreyi sıfırla
+            setupCorridors();
+        }
+
+        // Oyun başlatıldığında seviye seçim ekranını göster
+        document.getElementById("levelSelect").style.display = "block";
+    </script>
+</body>
+</html>
